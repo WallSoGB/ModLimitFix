@@ -91,7 +91,7 @@ namespace Win32IO {
 					arOpenMode	 = OPEN_ALWAYS;
 					break;
 				case NiFile::APPEND_ONLY:
-					arAccessMode = GENERIC_WRITE;
+					arAccessMode = GENERIC_WRITE | GENERIC_READ;
 					arOpenMode	 = OPEN_EXISTING;
 					break;
 				default:
@@ -100,7 +100,7 @@ namespace Win32IO {
 		}
 
 		bool __fastcall InitFile(const char* apFileName) {
-			uint32_t eFlags = FILE_FLAG_SEQUENTIAL_SCAN;
+			uint32_t eFlags = FILE_FLAG_SEQUENTIAL_SCAN | FILE_ATTRIBUTE_NORMAL;
 			uint32_t eOpenMode;
 			uint32_t eAccessMode;
 			PickModes(m_eMode, eOpenMode, eAccessMode);
