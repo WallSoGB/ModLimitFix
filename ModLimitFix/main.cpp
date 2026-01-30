@@ -251,6 +251,14 @@ namespace Win32IO {
 				ReplaceCall(uiAddr, BSWin32File::Hook_DiskWrite);
 			}
 		}
+
+		{
+			// Disable Obsidian's serialized I/O thread, as it just wastes memory after our patches
+			PatchMemoryNop(0xAA306A, 5);
+			WriteRelJump(0xAA85C0, 0xECB65A);
+			WriteRelJump(0xAA8610, 0xECB3A8);
+			WriteRelJump(0xAA8660, 0xECB086);
+		}
 	}
 };
 
