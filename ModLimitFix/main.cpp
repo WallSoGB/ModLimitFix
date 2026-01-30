@@ -88,7 +88,7 @@ namespace Win32IO {
 					break;
 				case NiFile::WRITE_ONLY:
 					arAccessMode = GENERIC_WRITE;
-					arOpenMode	 = CREATE_ALWAYS;
+					arOpenMode	 = OPEN_ALWAYS;
 					break;
 				case NiFile::APPEND_ONLY:
 					arAccessMode = GENERIC_WRITE;
