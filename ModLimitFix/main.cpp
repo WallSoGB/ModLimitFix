@@ -24,6 +24,8 @@ namespace {
 
 namespace Win32IO {
 
+	bool bHooked = false;
+
 	class NiBinaryStream {
 	public:
 		NiBinaryStream();
@@ -226,6 +228,9 @@ namespace Win32IO {
 	}
 
 	void InitHooks() {
+		if (bHooked)
+			return;
+
 		{
 			WriteRelJump(0xAA14F3, HooksAsm::NiFile::Open);
 			ReplaceCall(0xAA16AE, BSWin32File::Hook_Close);
@@ -259,6 +264,8 @@ namespace Win32IO {
 			WriteRelJump(0xAA8610, 0xECB3A8);
 			WriteRelJump(0xAA8660, 0xECB086);
 		}
+
+		bHooked = true;
 	}
 };
 
@@ -267,7 +274,12 @@ EXTERN_DLL_EXPORT bool NVSEPlugin_Query(const NVSEInterface* apNVSE, PluginInfo*
 	apInfo->pName			= PLUGIN_NAME;
 	apInfo->uiVersion		= PLUGIN_VERSION;
 
-	return !apNVSE->bIsEditor;
+	if (apNVSE->bIsEditor)
+		return false;
+
+	// In case user uses an xNVSE older than 6.4.5
+	Win32IO::InitHooks();
+	return true;
 }
 
 EXTERN_DLL_EXPORT bool NVSEPlugin_Preload() {
@@ -276,7 +288,6 @@ EXTERN_DLL_EXPORT bool NVSEPlugin_Preload() {
 }
 
 EXTERN_DLL_EXPORT bool NVSEPlugin_Load(const NVSEInterface* apNVSE) {
-	// Non-NVSE extenders don't have Preload, and would have to do call InitHooks here instead.
 	return true;
 }
 
