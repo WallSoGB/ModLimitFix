@@ -1,5 +1,5 @@
 constexpr char const* PLUGIN_NAME = "MLF";
-constexpr uint32_t PLUGIN_VERSION = 4;
+constexpr uint32_t PLUGIN_VERSION = 5;
 
 namespace {
 	struct NVSEInterface {
@@ -23,6 +23,8 @@ namespace {
 
 
 namespace Win32IO {
+
+	bool bHooked = false;
 
 	class NiBinaryStream {
 	public:
@@ -88,10 +90,10 @@ namespace Win32IO {
 					break;
 				case NiFile::WRITE_ONLY:
 					arAccessMode = GENERIC_WRITE;
-					arOpenMode	 = CREATE_ALWAYS;
+					arOpenMode	 = OPEN_ALWAYS;
 					break;
 				case NiFile::APPEND_ONLY:
-					arAccessMode = GENERIC_WRITE;
+					arAccessMode = GENERIC_WRITE | GENERIC_READ;
 					arOpenMode	 = OPEN_EXISTING;
 					break;
 				default:
@@ -100,7 +102,7 @@ namespace Win32IO {
 		}
 
 		bool __fastcall InitFile(const char* apFileName) {
-			uint32_t eFlags = FILE_FLAG_SEQUENTIAL_SCAN;
+			uint32_t eFlags = FILE_FLAG_SEQUENTIAL_SCAN | FILE_ATTRIBUTE_NORMAL;
 			uint32_t eOpenMode;
 			uint32_t eAccessMode;
 			PickModes(m_eMode, eOpenMode, eAccessMode);
@@ -226,6 +228,9 @@ namespace Win32IO {
 	}
 
 	void InitHooks() {
+		if (bHooked)
+			return;
+
 		{
 			WriteRelJump(0xAA14F3, HooksAsm::NiFile::Open);
 			ReplaceCall(0xAA16AE, BSWin32File::Hook_Close);
@@ -251,6 +256,16 @@ namespace Win32IO {
 				ReplaceCall(uiAddr, BSWin32File::Hook_DiskWrite);
 			}
 		}
+
+		{
+			// Disable Obsidian's serialized I/O thread, as it just wastes memory after our patches
+			PatchMemoryNop(0xAA306A, 5);
+			WriteRelJump(0xAA85C0, 0xECB65A);
+			WriteRelJump(0xAA8610, 0xECB3A8);
+			WriteRelJump(0xAA8660, 0xECB086);
+		}
+
+		bHooked = true;
 	}
 };
 
@@ -259,7 +274,12 @@ EXTERN_DLL_EXPORT bool NVSEPlugin_Query(const NVSEInterface* apNVSE, PluginInfo*
 	apInfo->pName			= PLUGIN_NAME;
 	apInfo->uiVersion		= PLUGIN_VERSION;
 
-	return !apNVSE->bIsEditor;
+	if (apNVSE->bIsEditor)
+		return false;
+
+	// In case user uses an xNVSE older than 6.4.5
+	Win32IO::InitHooks();
+	return true;
 }
 
 EXTERN_DLL_EXPORT bool NVSEPlugin_Preload() {
@@ -268,7 +288,6 @@ EXTERN_DLL_EXPORT bool NVSEPlugin_Preload() {
 }
 
 EXTERN_DLL_EXPORT bool NVSEPlugin_Load(const NVSEInterface* apNVSE) {
-	// Non-NVSE extenders don't have Preload, and would have to do call InitHooks here instead.
 	return true;
 }
 
