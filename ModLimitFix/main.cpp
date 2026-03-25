@@ -102,12 +102,13 @@ namespace Win32IO {
 		}
 
 		bool __fastcall InitFile(const char* apFileName) {
-			uint32_t eFlags = FILE_FLAG_SEQUENTIAL_SCAN | FILE_ATTRIBUTE_NORMAL;
+			constexpr uint32_t eFlags = FILE_FLAG_SEQUENTIAL_SCAN | FILE_ATTRIBUTE_NORMAL;
+			constexpr uint32_t eShareFlags = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 			uint32_t eOpenMode;
 			uint32_t eAccessMode;
 			PickModes(m_eMode, eOpenMode, eAccessMode);
 
-			HANDLE hFile = CreateFileA(apFileName, eAccessMode, FILE_SHARE_READ, nullptr, eOpenMode, eFlags, nullptr);
+			HANDLE hFile = CreateFileA(apFileName, eAccessMode, eShareFlags, nullptr, eOpenMode, eFlags, nullptr);
 
 			if (hFile == INVALID_HANDLE_VALUE) {
 				SetFileHandle(nullptr);
