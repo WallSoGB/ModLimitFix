@@ -1,5 +1,5 @@
 constexpr char const* PLUGIN_NAME = "MLF";
-constexpr uint32_t PLUGIN_VERSION = 6;
+constexpr uint32_t PLUGIN_VERSION = 7;
 
 namespace {
 	struct NVSEInterface {
