@@ -7,7 +7,28 @@ namespace {
 		uint32_t	uiRuntimeVersion;
 		uint32_t	uiEditorVersion;
 		BOOL		bIsEditor;
-		// .. rest is not needed
+		bool		(*RegisterCommand)(void* apCommandInfo);
+		void		(*SetOpcodeBase)(uint32_t auiOpcode);
+		void*		(*QueryInterface)(uint32_t auiID);
+		uint32_t	(*GetPluginHandle)();
+	};
+
+	struct NVSEMessagingInterface {
+		struct Message {
+			const char* pSender;
+			uint32_t	uiType;
+			uint32_t	uiDataLen;
+			void*		pData;
+		};
+
+		typedef void (*EventCallback)(Message* apMsg);
+
+		enum {
+			kMessage_PostLoad,
+		};
+
+		uint32_t	uiVersion;
+		bool		(*RegisterListener)(uint32_t auiListener, const char* apSender, EventCallback apHandler);
 	};
 
 	struct PluginInfo {
@@ -179,40 +200,40 @@ namespace Win32IO {
 
 	namespace HooksAsm {
 		namespace BSFile {
+			static uint32_t uiOpenRetAddr = 0;
 			void __declspec(naked) Open() {
-				static constexpr uint32_t uiRetAddr = 0xAFF46F;
 				__asm {
 					mov     ecx, [ebp - 0xC]
 					call	Win32IO::BSWin32File::Hook_BSOpen
-					jmp 	uiRetAddr
+					jmp 	uiOpenRetAddr
 				}
 			}
 
+			static uint32_t uiGetSizeRetAddr = 0;
 			void __declspec(naked) GetSize() {
-				static constexpr uint32_t uiRetAddr = 0xB0057D;
 				__asm {
 					mov     ecx, [ebp - 0x8]
 					call	Win32IO::BSWin32File::Hook_BSGetSize
-					jmp 	uiRetAddr
+					jmp 	uiGetSizeRetAddr
 				}
 			}
 		}
 
 		namespace NiFile {
+			static uint32_t uiOpenRetAddr = 0;
 			void __declspec(naked) Open() {
-				static constexpr uint32_t uiRetAddr = 0xAA1531;
 				__asm {
 					mov		ecx, esi
 					mov     edx, [esp + 0x14]
 					call	Win32IO::BSWin32File::Hook_NiOpen
 					mov     ecx, [esp + 0x18]
 					mov		ebx, 0
-					jmp 	uiRetAddr
+					jmp 	uiOpenRetAddr
 				}
 			}
 
+			static uint32_t uiSeekRetAddr = 0;
 			void __declspec(naked) SeekAlt() {
-				static constexpr uint32_t uiRetAddr = 0xAA1743;
 				__asm {
 					// EBX - aiWhence
 					// EDI - aiOffset
@@ -222,17 +243,28 @@ namespace Win32IO {
 					call	Win32IO::BSWin32File::Hook_SeekAlt
 					pop		edi
 					pop		ebx
-					jmp 	uiRetAddr
+					jmp 	uiSeekRetAddr
 				}
 			}
 		}
 	}
 
-	void InitHooks() {
+	SPEC_NOINLINE void InitHooks(bool abGECK) {
 		if (bHooked)
 			return;
 
-		{
+		if (abGECK) {
+			HooksAsm::NiFile::uiOpenRetAddr = 0x851E91;
+			HooksAsm::NiFile::uiSeekRetAddr = 0x8520A3;
+			WriteRelJump(0x851E53, HooksAsm::NiFile::Open);
+			ReplaceCall(0x85200E, BSWin32File::Hook_Close);
+			ReplaceCall(0x85223E, BSWin32File::Hook_Close);
+			WriteRelJump(0x852075, HooksAsm::NiFile::SeekAlt);
+			WriteRelJumpEx(0x851F50, &BSWin32File::Hook_GetFileSize);
+		}
+		else {
+			HooksAsm::NiFile::uiOpenRetAddr = 0xAA1531;
+			HooksAsm::NiFile::uiSeekRetAddr = 0xAA1743;
 			WriteRelJump(0xAA14F3, HooksAsm::NiFile::Open);
 			ReplaceCall(0xAA16AE, BSWin32File::Hook_Close);
 			ReplaceCall(0xAA18DE, BSWin32File::Hook_Close);
@@ -240,14 +272,34 @@ namespace Win32IO {
 			WriteRelJumpEx(0xAA15F0, &BSWin32File::Hook_GetFileSize);
 		}
 
-		{
+		if (abGECK) {
+			HooksAsm::BSFile::uiOpenRetAddr = 0x8A034F;
+			HooksAsm::BSFile::uiGetSizeRetAddr = 0x8A147D;
+			WriteRelJump(0x8A0228, HooksAsm::BSFile::Open);
+			WriteRelJump(0x8A142B, HooksAsm::BSFile::GetSize);
+			ReplaceCall(0x8A0C1C, BSWin32File::Hook_Close);
+		}
+		else {
+			HooksAsm::BSFile::uiOpenRetAddr = 0xAFF46F;
+			HooksAsm::BSFile::uiGetSizeRetAddr = 0xB0057D;
 			WriteRelJump(0xAFF348, HooksAsm::BSFile::Open);
 			WriteRelJump(0xB0052B, HooksAsm::BSFile::GetSize);
 			ReplaceCall(0xAFFD3C, BSWin32File::Hook_Close);
 		}
 
-		{
-			constexpr static uint32_t uiReadAddr[]	= { 0xAA1583, 0xAA17AF, 0xAA17CF };
+		if (abGECK) {
+			constexpr static uint32_t uiReadAddr[]	= { 0x851EE3, 0x85210F, 0x85212F };
+			constexpr static uint32_t uiWriteAddr[] = { 0x851F2D, 0x8521E1 };
+			for (uint32_t uiAddr : uiReadAddr) {
+				ReplaceCall(uiAddr, BSWin32File::Hook_DiskRead);
+			}
+
+			for (uint32_t uiAddr : uiWriteAddr) {
+				ReplaceCall(uiAddr, BSWin32File::Hook_DiskWrite);
+			}
+		}
+		else {
+			constexpr static uint32_t uiReadAddr[]  = { 0xAA1583, 0xAA17AF, 0xAA17CF };
 			constexpr static uint32_t uiWriteAddr[] = { 0xAA15CD, 0xAA1881 };
 			for (uint32_t uiAddr : uiReadAddr) {
 				ReplaceCall(uiAddr, BSWin32File::Hook_DiskRead);
@@ -258,8 +310,14 @@ namespace Win32IO {
 			}
 		}
 
-		{
-			// Disable Obsidian's serialized I/O thread, as it just wastes memory after our patches
+		// Disable Obsidian's serialized I/O thread, as it just wastes memory after our patches
+		if (abGECK) {
+			PatchMemoryNop(0x8532CA, 5);
+			WriteRelJump(0x857410, 0xC63400);
+			WriteRelJump(0x857460, 0xC62A6D);
+			WriteRelJump(0x8574B0, 0xC62686);
+		}
+		else {
 			PatchMemoryNop(0xAA306A, 5);
 			WriteRelJump(0xAA85C0, 0xECB65A);
 			WriteRelJump(0xAA8610, 0xECB3A8);
@@ -270,21 +328,31 @@ namespace Win32IO {
 	}
 };
 
+void MessageHandler(NVSEMessagingInterface::Message* apMessage) {
+	if (apMessage->uiType == NVSEMessagingInterface::kMessage_PostLoad)
+		Win32IO::InitHooks(true);
+}
+
 EXTERN_DLL_EXPORT bool NVSEPlugin_Query(const NVSEInterface* apNVSE, PluginInfo* apInfo) {
 	apInfo->uiInfoVersion	= PluginInfo::kInfoVersion;
 	apInfo->pName			= PLUGIN_NAME;
 	apInfo->uiVersion		= PLUGIN_VERSION;
 
-	if (apNVSE->bIsEditor)
-		return false;
-
-	// In case user uses an xNVSE older than 6.4.5
-	Win32IO::InitHooks();
+	// Need to run after GECK Extender, as it shares some of the hooks (Obisidian's serialized I/O removal)
+	if (apNVSE->bIsEditor) {
+		uint32_t uiPluginHandle = apNVSE->GetPluginHandle();
+		NVSEMessagingInterface* pMessaging = static_cast<NVSEMessagingInterface*>(apNVSE->QueryInterface(2));
+		pMessaging->RegisterListener(uiPluginHandle, "NVSE", MessageHandler);
+	}
+	else {
+		// In case user uses an xNVSE older than 6.4.5
+		Win32IO::InitHooks(false);
+	}
 	return true;
 }
 
 EXTERN_DLL_EXPORT bool NVSEPlugin_Preload() {
-	Win32IO::InitHooks();
+	Win32IO::InitHooks(false);
 	return true;
 }
 
